@@ -1,6 +1,7 @@
 import os
 import sys
 import random
+import re
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, colorchooser, ttk
@@ -32,6 +33,10 @@ GRID_LAYOUTS = {
     "5x2":  (5, 2),
 }
 
+def natural_sort_key(path):
+    parts = re.split(r'(\d+)', path.name)
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
 def collect_photos(sources):
     photos = []
     for src in sources:
@@ -42,7 +47,7 @@ def collect_photos(sources):
                 photos.extend(p.glob(f"*{ext.upper()}"))
         elif p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS:
             photos.append(p)
-    return sorted(set(photos))
+    return sorted(set(photos), key=natural_sort_key)
 
 def best_grid(n):
     if n == 0: return 1, 1
