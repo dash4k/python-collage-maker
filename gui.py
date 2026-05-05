@@ -112,7 +112,7 @@ def hex_to_rgb(hex_color):
     h = hex_color.lstrip("#")
     return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
-def make_collage(sources, output, layout, canvas_size, padding, bg_color, shuffle_photos, title, max_photos, shadow):
+def make_collage(sources, output, layout, canvas_size, padding, bg_color, shuffle_photos, title, max_photos, shadow, numbering, numbering_prefix):
     photos = collect_photos(sources)
     if not photos:
         raise ValueError("No supported photos found in the selected folder.")
@@ -159,6 +159,56 @@ def make_collage(sources, output, layout, canvas_size, padding, bg_color, shuffl
 
         canvas.paste(cell, (x, y))
 
+        # Draw number badge in top-right corner of the cell
+        if numbering:
+            number = str(idx + 1)
+            if numbering_prefix:
+                number = str(numbering_prefix) + number
+            badge_font_size = max(12, min(cell_w, cell_h) // 8)
+            badge_font = None
+            for font_path in [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/Library/Fonts/Arial Bold.ttf",
+                "C:/Windows/Fonts/arialbd.ttf",
+            ]:
+                if Path(font_path).exists():
+                    try:
+                        badge_font = ImageFont.truetype(font_path, badge_font_size)
+                        break
+                    except Exception:
+                        pass
+            if badge_font is None:
+                badge_font = ImageFont.load_default()
+
+            draw = ImageDraw.Draw(canvas)
+            try:
+                bbox = draw.textbbox((0, 0), number, font=badge_font)
+                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except AttributeError:
+                tw, th = draw.textsize(number, font=badge_font)
+
+            pad = max(4, badge_font_size // 4)
+            badge_w = tw + pad * 2
+            badge_h = th + pad * 2
+            margin = max(4, padding // 2)
+            bx = x + margin
+            by = y + margin
+
+            # Semi-transparent dark pill background
+            overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw.rounded_rectangle(
+                [bx, by, bx + badge_w, by + badge_h],
+                radius=badge_h // 3,
+                fill=(0, 0, 0, 160)
+            )
+            canvas = canvas.convert("RGBA")
+            canvas = Image.alpha_composite(canvas, overlay)
+            canvas = canvas.convert("RGB")
+
+            draw = ImageDraw.Draw(canvas)
+            draw.text((bx + pad, by + pad), number, font=badge_font, fill=(255, 255, 255))
+
     if title:
         canvas = add_title(canvas, title, bg_color=bg)
 
@@ -188,6 +238,8 @@ class CollageApp:
         self.max_var = tk.IntVar(value=12)
         self.shuffle_var = tk.BooleanVar(value=False)
         self.shadow_var = tk.BooleanVar(value=True)
+        self.numbering_var = tk.BooleanVar(value=False)
+        self.numprefix_var = tk.StringVar()
 
         self.build_ui()
 
@@ -223,7 +275,7 @@ class CollageApp:
 
         ttk.Label(settings_frame, text="Collage Title:").grid(row=2, column=0, sticky="w", pady=5)
         ttk.Entry(settings_frame, textvariable=self.title_var, width=25).grid(row=2, column=1, columnspan=3, sticky="w", pady=5)
-
+        
         ttk.Label(settings_frame, text="Background Color:").grid(row=3, column=0, sticky="w", pady=5)
         self.color_btn = tk.Button(settings_frame, bg=self.bg_var.get(), width=3, command=self.choose_color)
         self.color_btn.grid(row=3, column=1, sticky="w", pady=5)
@@ -231,6 +283,10 @@ class CollageApp:
         # Checkboxes
         ttk.Checkbutton(settings_frame, text="Shuffle Photos", variable=self.shuffle_var).grid(row=4, column=0, columnspan=2, sticky="w", pady=5)
         ttk.Checkbutton(settings_frame, text="Add Shadows", variable=self.shadow_var).grid(row=4, column=2, columnspan=2, sticky="w", pady=5)
+        
+        ttk.Checkbutton(settings_frame, text="Add Numbering", variable=self.numbering_var).grid(row=5, column=0, columnspan=2, sticky="w", pady=5)
+        ttk.Label(settings_frame, text="Numbering Prefix").grid(row=6, column=0, sticky="w", pady=5)
+        ttk.Entry(settings_frame, textvariable=self.numprefix_var, width=20).grid(row=6, column=1, columnspan=3, sticky="w", pady=5)
 
         # Generate Button
         self.generate_btn = ttk.Button(frame, text="Generate Collage", command=self.start_generation)
@@ -279,7 +335,9 @@ class CollageApp:
                 shuffle_photos=self.shuffle_var.get(),
                 title=self.title_var.get() if self.title_var.get() else None,
                 max_photos=self.max_var.get(),
-                shadow=self.shadow_var.get()
+                shadow=self.shadow_var.get(),
+                numbering=self.numbering_var.get(),
+                numbering_prefix=self.numprefix_var.get(),
             )
             self.root.after(0, lambda: self.finish_generation(True, str(out_path)))
         except Exception as e:
